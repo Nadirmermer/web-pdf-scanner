@@ -1,6 +1,8 @@
 # Ekran Tarayıcı
 
-Web sayfalarını tarayıp PDF dosyasına dönüştüren kullanıcı dostu bir masaüstü uygulaması.
+Web sayfalarında bulunan pdfleri tarayıp PDF dosyasına dönüştüren kullanıcı dostu bir masaüstü uygulaması.
+
+(Diyelim ki bir e- kitap satın aldınız ve indirip kullanmak istiyorsunzu bazı siteler buna müsade etmiyorlar sadece ekran görüntüsü alabiliyorsunuz bu işlem de çok uzun ve zahmetli o zaman ne yapacaksınız bu uygulamayı indirip başlatacaksınız kendi kendine tüm sayfaların ekran gröüntüsü alacak ve en son size pdf olarak verecek)
 
 ![Ekran Tarayıcı](screenshots/ekran_tarayici.png)
 
@@ -45,7 +47,7 @@ python ekran_tarayici.py
 
 ### Kısayollar
 
-- **ESC**: Taramayı durdur
+- **ESC**: Taramayı durdur (şüpheli siz yine de paneli kullanın)
 
 ## Ekran Görüntüleri
 
