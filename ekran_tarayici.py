@@ -6,8 +6,6 @@ import keyboard
 import os
 from PIL import Image, ImageTk, ImageGrab
 import threading
-from PyPDF2 import PdfWriter, PdfReader
-from io import BytesIO
 import json
 import gc
 
@@ -50,8 +48,8 @@ class EkranTarayici:
         self.tarama_duraklatildi = False  # Tarama duraklatıldı mı?
         
         # Sabit parametreler (kullanıcıdan alınmayacak)
-        self.max_bekleme_suresi = 3       # Maksimum yüklenme süresi (3 saniye)
-        self.sayfa_gecis_gecikmesi = 0.8  # Sayfa geçiş gecikmesi (0.8 saniye)
+        self.max_bekleme_suresi = 5       # Maksimum yüklenme süresi (5 saniye) - arttırıldı 
+        self.sayfa_gecis_gecikmesi = 1.5  # Sayfa geçiş gecikmesi (1.5 saniye) - arttırıldı
         
         # Turcademy modu için özel parametreler
         self.turcademy_gecis_carpani = 1.2  # Turcademy için gecikme çarpanı (1.2)
@@ -111,38 +109,19 @@ class EkranTarayici:
     def ilerleme_yukle(self):
         """Önceki ilerlemeyi yükler"""
         try:
+            # Önce klasördeki mevcut sayfa dosyalarını kontrol et
+            self.mevcut_sayfa_durumunu_tespit_et()
+            
             if os.path.exists(self.ilerleme_dosyasi):
                 with open(self.ilerleme_dosyasi, 'r') as f:
                     ilerleme = json.load(f)
                     self.toplam_sayfa = ilerleme.get('toplam_sayfa', 1)
                     
-                    # Kaydedilmiş son sayfa numarasını kontrol et
-                    kayitli_sayfa = ilerleme.get('son_sayfa', 1)
-                    if kayitli_sayfa > 1:
-                        # En son sayfa numarasını ve toplam sayfa bilgisini güncelle
-                        self.sayfa_no = kayitli_sayfa + 1  # Bir sonraki sayfadan başla
-                        self.log_ekle(f"Kaydedilmiş ilerleme bulundu. Son işlenen sayfa: {kayitli_sayfa}, Sonraki sayfa: {self.sayfa_no}")
-                    else:
-                        self.sayfa_no = 1
+                    # Toplam sayfayı mevcut en yüksek sayfa ile karşılaştır
+                    if self.sayfa_no > self.toplam_sayfa:
+                        self.toplam_sayfa = self.sayfa_no
                     
-                    # Sayfa dosyalarını kontrol et
-                    try:
-                        sayfa_dosyalari = [f for f in os.listdir(self.kayit_klasoru) 
-                                        if f.startswith("sayfa_") and f.endswith(".png")]
-                        
-                        if sayfa_dosyalari:
-                            # En büyük sayfa numarasını bul
-                            try:
-                                en_buyuk_sayfa = max([int(os.path.basename(f).split('_')[1].split('.')[0]) 
-                                                   for f in sayfa_dosyalari])
-                                # İlerleme dosyasındaki son sayfa ile gerçek dosya durumunu karşılaştır
-                                if en_buyuk_sayfa >= self.sayfa_no:
-                                    self.sayfa_no = en_buyuk_sayfa + 1  # Bir sonraki sayfadan başla
-                                    self.log_ekle(f"En son kaydedilen sayfa: {en_buyuk_sayfa}, Sonraki sayfa: {self.sayfa_no}")
-                            except Exception as e:
-                                self.log_ekle(f"Dosya kontrolünde hata: {e}")
-                    except Exception as e:
-                        self.log_ekle(f"Klasör okuma hatası: {e}")
+                    self.log_ekle(f"İlerleme dosyası yüklendi. Sonraki sayfa: {self.sayfa_no}")
                 
                 # Sayfa numarası alanını güncelle
                 if hasattr(self, 'baslangic_sayfa_entry'):
@@ -154,6 +133,50 @@ class EkranTarayici:
                 
         except Exception as e:
             self.log_ekle(f"İlerleme yüklenirken hata: {e}")
+    
+    def mevcut_sayfa_durumunu_tespit_et(self):
+        """Klasördeki mevcut son sayfa numarasını tespit eder ve taramaya oradan devam eder"""
+        try:
+            if not self.aktif_kitap or not os.path.exists(self.kayit_klasoru):
+                self.sayfa_no = 1
+                return
+                
+            # Sayfaları bul ve en yüksek sayfa numarasını tespit et
+            en_yuksek_sayfa = 0
+            sayfa_dosyalari = []
+            
+            # Klasördeki tüm sayfa_X.png dosyalarını bul
+            for dosya in os.listdir(self.kayit_klasoru):
+                if dosya.startswith("sayfa_") and dosya.endswith(".png"):
+                    sayfa_dosyalari.append(dosya)
+            
+            # Sayfa numaralarını çıkar
+            for dosya in sayfa_dosyalari:
+                try:
+                    # sayfa_X.png formatındaki dosya adından X'i çıkar
+                    sayfa_no_str = dosya.replace("sayfa_", "").replace(".png", "")
+                    sayfa_no = int(sayfa_no_str)
+                    if sayfa_no > en_yuksek_sayfa:
+                        en_yuksek_sayfa = sayfa_no
+                except ValueError:
+                    continue
+            
+            # En yüksek sayfa numarasından sonraki sayfadan devam et
+            if en_yuksek_sayfa > 0:
+                self.sayfa_no = en_yuksek_sayfa + 1
+                # Toplam sayfa numarasını da güncelle
+                self.toplam_sayfa = max(self.toplam_sayfa, en_yuksek_sayfa)
+                self.log_ekle(f"Klasördeki en yüksek sayfa numarası: {en_yuksek_sayfa}, tarama {self.sayfa_no}. sayfadan devam edecek")
+            else:
+                self.sayfa_no = 1
+                self.log_ekle("Klasörde sayfa bulunamadı, tarama 1. sayfadan başlayacak")
+                
+            # Sayfa bilgisi etiketlerini güncelle
+            self.sayfa_bilgisi_guncelle()
+                
+        except Exception as e:
+            self.log_ekle(f"Sayfa durumu tespit edilirken hata: {e}")
+            self.sayfa_no = 1
     
     def ilerleme_kaydet(self):
         """Mevcut ilerlemeyi kaydeder"""
@@ -203,251 +226,199 @@ class EkranTarayici:
             print(f"Ayarlar kaydedilirken hata: {e}")
     
     def create_widgets(self):
-        # Ana çerçeve - pencere yeniden boyutlandırıldığında büyüyecek şekilde
-        main_frame = ttk.Frame(self.root, padding="5")  # 10 yerine 5 padding
+        # Ana çerçeve - maksimum kompaktlık için padding azaltıldı
+        main_frame = ttk.Frame(self.root, padding="2")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Ana içerik frame
         content_frame = ttk.Frame(main_frame)
         content_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Tarama sekmesini yapılandır (grid layout kullanarak daha iyi yerleşim)
-        content_frame.columnconfigure(0, weight=1)  # Sütunun genişlemesine izin ver
-        content_frame.rowconfigure(4, weight=1)     # Log alanının genişlemesine izin ver
+        # Tarama sekmesini yapılandır
+        content_frame.columnconfigure(0, weight=1)
+        content_frame.rowconfigure(4, weight=1)
         
-        # ======= ADIM 1: KİTAP SEÇİMİ =======
-        kitap_frame = ttk.LabelFrame(content_frame, text="🔷 1. Adım: Kitap Seçimi", padding="5")  # 10 yerine 5 padding
-        kitap_frame.grid(row=0, column=0, sticky="ew", pady=3)  # 5 yerine 3 padding
+        # ======= KİTAP SEÇİMİ =======
+        kitap_frame = ttk.LabelFrame(content_frame, text="1. Kitap Seçimi", padding="2")
+        kitap_frame.grid(row=0, column=0, sticky="ew", pady=2)
         kitap_frame.columnconfigure(1, weight=1)
         
-        # Kitap seçim kontrollerini bir satır içinde düzenle
-        kitap_sec_frame = ttk.Frame(kitap_frame)
-        kitap_sec_frame.grid(row=0, column=0, sticky="ew", padx=3, pady=3)  # 5 yerine 3 padding
-        kitap_sec_frame.columnconfigure(0, weight=1)
-        
-        # Kitap seçme combobox'ı
-        self.kitap_combobox = ttk.Combobox(kitap_sec_frame, width=40, state="readonly")
-        self.kitap_combobox.grid(row=0, column=0, padx=5, sticky="ew")
+        # Tek satırda kitap seçimi
+        self.kitap_combobox = ttk.Combobox(kitap_frame, width=40, state="readonly")
+        self.kitap_combobox.pack(side=tk.LEFT, padx=2, pady=2, fill=tk.X, expand=True)
         self.kitap_combobox.bind("<<ComboboxSelected>>", lambda e: self.kitap_sec())
         
-        # Butonları aynı satıra yerleştir
-        ttk.Button(kitap_sec_frame, text="📚 Yeni Kitap", command=self.yeni_kitap_ekle,
-                 style='Secondary.TButton').grid(row=0, column=1, padx=5)
+        # Butonları yan yana yerleştir
+        buton_frame = ttk.Frame(kitap_frame)
+        buton_frame.pack(side=tk.RIGHT, padx=2, pady=2)
+        
+        ttk.Button(buton_frame, text="Yeni", command=self.yeni_kitap_ekle,
+                 width=5).pack(side=tk.LEFT, padx=1)
                  
-        # Kitap silme butonu ekle
-        ttk.Button(kitap_sec_frame, text="🗑️ Kitabı Sil", command=self.kitap_sil,
-                 style='Secondary.TButton').grid(row=0, column=2, padx=5)
+        ttk.Button(buton_frame, text="Sil", command=self.kitap_sil,
+                 width=5).pack(side=tk.LEFT, padx=1)
                  
-        self.pdf_button = ttk.Button(kitap_sec_frame, text="📄 PDF Oluştur", 
+        # PDF butonu - pack yerine aynı hizalama mekanizmasını kullan
+        self.pdf_button = ttk.Button(buton_frame, text="PDF", 
                                    command=self.secili_klasordeki_goruntuleri_birlestir,
-                                   style='Secondary.TButton')
-        self.pdf_button.grid(row=0, column=3, padx=5)
-        self.pdf_button.grid_remove()  # Başlangıçta gizle
+                                   width=5)
+        self.pdf_button.pack(side=tk.LEFT, padx=1)
+        # Başlangıçta gizlemek yerine görünmez yapma
+        self.pdf_button_visible = False  # Butonun görünürlüğünü takip etmek için flag ekle
         
-        # ======= ADIM 2: TARAMA MODU =======
-        tarama_modu_frame = ttk.LabelFrame(content_frame, text="🔷 2. Adım: Tarama Modu Seçimi", padding="5")  # 10 yerine 5 padding
-        tarama_modu_frame.grid(row=1, column=0, sticky="ew", pady=3)  # 5 yerine 3 padding
+        # ======= TARAMA MODU =======
+        tarama_modu_frame = ttk.LabelFrame(content_frame, text="2. Tarama Modu", padding="2")
+        tarama_modu_frame.grid(row=1, column=0, sticky="ew", pady=2)
         
-        # Tarama modları
+        # Tarama modları - Tek satırda
         self.tarama_modu_var = tk.StringVar(value=self.tarama_modu)
         
-        # Mod seçimine açıklayıcı ikonlar ekle
+        # Modları yatay düzenle
         modu_frame = ttk.Frame(tarama_modu_frame)
-        modu_frame.pack(fill=tk.X, padx=5, pady=5)
+        modu_frame.pack(fill=tk.X, padx=2, pady=2)
         
-        # Nobel modu (kaydırmalı sayfa tarama)
-        nobel_frame = ttk.Frame(modu_frame)
-        nobel_frame.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        # Nobel modu (daha kompakt)
+        ttk.Radiobutton(modu_frame, text="Nobel (Sayfa Kaydırma)", 
+                       value="Nobel", variable=self.tarama_modu_var,
+                       command=self.tarama_modu_degisti).pack(side=tk.LEFT, padx=10)
         
-        nobel_rb = ttk.Radiobutton(nobel_frame, text="Nobel Modu", 
-                                  value="Nobel", variable=self.tarama_modu_var,
-                                  command=self.tarama_modu_degisti)
-        nobel_rb.grid(row=0, column=0, sticky="w")
-        ttk.Label(nobel_frame, text="📜 Sayfa kaydırmalı tarama", 
-                 style='Info.TLabel').grid(row=1, column=0, sticky="w")
+        # Turcademy modu (daha kompakt)
+        ttk.Radiobutton(modu_frame, text="Turcademy (Tek Sayfa)", 
+                       value="Turcademy", variable=self.tarama_modu_var,
+                       command=self.tarama_modu_degisti).pack(side=tk.LEFT, padx=10)
         
-        # Turcademy modu (tam sayfa görüntü)
-        turcademy_frame = ttk.Frame(modu_frame)
-        turcademy_frame.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+        # ======= AYARLAR =======
+        ayarlar_frame = ttk.LabelFrame(content_frame, text="3. Tarama Ayarları", padding="2")
+        ayarlar_frame.grid(row=2, column=0, sticky="ew", pady=2)
         
-        turcademy_rb = ttk.Radiobutton(turcademy_frame, text="Turcademy Modu", 
-                                      value="Turcademy", variable=self.tarama_modu_var,
-                                      command=self.tarama_modu_degisti)
-        turcademy_rb.grid(row=0, column=0, sticky="w")
-        ttk.Label(turcademy_frame, text="📖 Tek sayfa görüntü tarama", 
-                 style='Info.TLabel').grid(row=1, column=0, sticky="w")
+        # Daha kompakt ayarlar
+        ayarlar_ic_frame = ttk.Frame(ayarlar_frame)
+        ayarlar_ic_frame.pack(fill=tk.X, padx=2, pady=2)
         
-        # ======= ADIM 3: AYARLAR =======
-        ayarlar_frame = ttk.LabelFrame(content_frame, text="🔷 3. Adım: Tarama Ayarları", padding="5")  # 10 yerine 5 padding
-        ayarlar_frame.grid(row=2, column=0, sticky="ew", pady=3)  # 5 yerine 3 padding
-        ayarlar_frame.columnconfigure(0, weight=1)
-        ayarlar_frame.columnconfigure(1, weight=1)
+        # Sol taraf - Tarama alanı
+        sol_frame = ttk.Frame(ayarlar_ic_frame)
+        sol_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5)
         
-        # Tarama alanı ve sayfa geçiş noktası yan yana iki sütunda
-        sol_frame = ttk.Frame(ayarlar_frame)
-        sol_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        
-        # Tarama Alanı Seçim Butonu
-        alan_buton_frame = ttk.Frame(sol_frame)
-        alan_buton_frame.grid(row=0, column=0, pady=5, sticky="w")
-        
-        ttk.Button(alan_buton_frame, text="📏 Tarama Alanı Seç", 
+        ttk.Button(sol_frame, text="Tarama Alanı Seç", 
                   command=self.tarama_alani_sec, 
-                  style='Accent.TButton').grid(row=0, column=0, padx=5)
+                  width=15).pack(side=tk.TOP, pady=1)
         
-        # Koordinat göstergesi
         self.koordinat_label = ttk.Label(sol_frame, 
-                             text=f"Sol Üst: ({self.tarama_alani['x1']}, {self.tarama_alani['y1']}) - Sağ Alt: ({self.tarama_alani['x2']}, {self.tarama_alani['y2']})",
-                             style='Info.TLabel')
-        self.koordinat_label.grid(row=1, column=0, padx=5, pady=2, sticky="w")
+                             text=f"({self.tarama_alani['x1']},{self.tarama_alani['y1']})-({self.tarama_alani['x2']},{self.tarama_alani['y2']})",
+                             style='Info.TLabel', font=('Segoe UI', 8))
+        self.koordinat_label.pack(side=tk.TOP)
         
-        # Sağ taraf
-        sag_frame = ttk.Frame(ayarlar_frame)
-        sag_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        # Sağ taraf - Tıklama noktası
+        sag_frame = ttk.Frame(ayarlar_ic_frame)
+        sag_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=5)
         
-        # Tıklama Noktası Seçim Butonu
-        ttk.Button(sag_frame, text="👆 Sayfa Geçiş Noktası Seç", 
+        ttk.Button(sag_frame, text="Sayfa Geçiş Noktası", 
                   command=self.tikla_nokta_sec, 
-                  style='Accent.TButton').grid(row=0, column=0, padx=5, pady=5, sticky="w")
+                  width=15).pack(side=tk.TOP, pady=1)
         
-        # Nokta koordinat göstergesi
         self.nokta_label = ttk.Label(sag_frame, 
-                         text=f"Koordinat: ({self.tiklanacak_nokta['x']}, {self.tiklanacak_nokta['y']})",
-                         style='Info.TLabel')
-        self.nokta_label.grid(row=1, column=0, padx=5, pady=2, sticky="w")
+                         text=f"({self.tiklanacak_nokta['x']},{self.tiklanacak_nokta['y']})",
+                         style='Info.TLabel', font=('Segoe UI', 8))
+        self.nokta_label.pack(side=tk.TOP)
         
-        # ======= ADIM 4: SAYFA BİLGİSİ =======
-        sayfa_frame = ttk.LabelFrame(content_frame, text="🔷 4. Adım: Sayfa Bilgisi", padding="5")  # 10 yerine 5 padding
-        sayfa_frame.grid(row=3, column=0, sticky="ew", pady=3)  # 5 yerine 3 padding
-        sayfa_frame.columnconfigure(1, weight=1)
+        # ======= SAYFA BİLGİSİ =======
+        sayfa_frame = ttk.LabelFrame(content_frame, text="4. Sayfa Bilgisi", padding="2")
+        sayfa_frame.grid(row=3, column=0, sticky="ew", pady=2)
         
-        # Sayfa bilgileri tek satırda
+        # Sayfa bilgileri kompakt alanda
         sayfa_bilgi_frame = ttk.Frame(sayfa_frame)
-        sayfa_bilgi_frame.pack(fill=tk.X, padx=5, pady=5)
+        sayfa_bilgi_frame.pack(fill=tk.X, padx=2, pady=2)
         
-        # Başlangıç sayfa
-        baslangic_frame = ttk.Frame(sayfa_bilgi_frame)
-        baslangic_frame.grid(row=0, column=0, padx=10)
-        
-        ttk.Label(baslangic_frame, text="Başlangıç Sayfa:", 
-                 style='Title.TLabel').grid(row=0, column=0, padx=5)
-        
+        # Tek satırda tüm bilgiler
+        ttk.Label(sayfa_bilgi_frame, text="Başlangıç:").pack(side=tk.LEFT, padx=2)
         self.baslangic_sayfa_var = tk.StringVar(value=str(self.sayfa_no))
-        self.baslangic_sayfa_entry = ttk.Entry(baslangic_frame, textvariable=self.baslangic_sayfa_var, width=5)
-        self.baslangic_sayfa_entry.grid(row=0, column=1, padx=5)
-        self.baslangic_sayfa_entry.bind("<Return>", lambda e: self.baslangic_sayfasini_guncelle())
+        self.baslangic_sayfa_entry = ttk.Entry(sayfa_bilgi_frame, textvariable=self.baslangic_sayfa_var, width=4, state='readonly')
+        self.baslangic_sayfa_entry.pack(side=tk.LEFT)
         
-        ttk.Button(baslangic_frame, text="Ayarla", 
-                  command=self.baslangic_sayfasini_guncelle, 
-                  style='Secondary.TButton', width=5).grid(row=0, column=2, padx=5)
+        ttk.Button(sayfa_bilgi_frame, text="Düzenle", command=self.sayfa_numarasi_duzenle, 
+                 width=6).pack(side=tk.LEFT, padx=2)
         
-        # Aktif sayfa bilgisi
-        sayfa_info_frame = ttk.Frame(sayfa_bilgi_frame)
-        sayfa_info_frame.grid(row=0, column=1, padx=10)
+        ttk.Label(sayfa_bilgi_frame, text="Şu anki:").pack(side=tk.LEFT, padx=(10, 2))
+        self.sayfa_label = ttk.Label(sayfa_bilgi_frame, text=str(self.sayfa_no), font=('Segoe UI', 9, 'bold'))
+        self.sayfa_label.pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(sayfa_info_frame, text="Şu anki Sayfa:", 
-                 style='Info.TLabel').grid(row=0, column=0, padx=5)
-        self.sayfa_label = ttk.Label(sayfa_info_frame, text=str(self.sayfa_no), 
-                                    style='Title.TLabel')
-        self.sayfa_label.grid(row=0, column=1, padx=5)
+        ttk.Label(sayfa_bilgi_frame, text="Toplam:").pack(side=tk.LEFT, padx=(10, 2))
+        self.toplam_sayfa_label = ttk.Label(sayfa_bilgi_frame, text=str(self.toplam_sayfa), font=('Segoe UI', 9, 'bold'))
+        self.toplam_sayfa_label.pack(side=tk.LEFT, padx=2)
         
-        # Hedef sayfa sayısı
-        hedef_frame = ttk.Frame(sayfa_bilgi_frame)
-        hedef_frame.grid(row=0, column=2, padx=10)
-        
-        ttk.Label(hedef_frame, text="Hedef Sayfa Sayısı:", 
-                style='Title.TLabel').grid(row=0, column=0, padx=5)
-        
+        ttk.Label(sayfa_bilgi_frame, text="Hedef:").pack(side=tk.LEFT, padx=(10, 2))
         self.hedef_sayfa_var = tk.StringVar(value=str(self.hedef_sayfa_sayisi))
-        self.hedef_sayfa_entry = ttk.Entry(hedef_frame, textvariable=self.hedef_sayfa_var, width=5)
-        self.hedef_sayfa_entry.grid(row=0, column=1, padx=5)
+        self.hedef_sayfa_entry = ttk.Entry(sayfa_bilgi_frame, textvariable=self.hedef_sayfa_var, width=4)
+        self.hedef_sayfa_entry.pack(side=tk.LEFT)
         self.hedef_sayfa_entry.bind("<Return>", lambda e: self.hedef_sayfasini_guncelle())
         
-        ttk.Button(hedef_frame, text="Ayarla", 
+        ttk.Button(sayfa_bilgi_frame, text="Ayarla", 
                   command=self.hedef_sayfasini_guncelle, 
-                  style='Secondary.TButton', width=5).grid(row=0, column=2, padx=5)
+                  width=6).pack(side=tk.LEFT, padx=2)
         
-        ttk.Label(sayfa_info_frame, text="Toplam Sayfa:", 
-                 style='Info.TLabel').grid(row=0, column=2, padx=5)
-        self.toplam_sayfa_label = ttk.Label(sayfa_info_frame, text=str(self.toplam_sayfa), 
-                                          style='Title.TLabel')
-        self.toplam_sayfa_label.grid(row=0, column=3, padx=5)
-        
-        # Sayfa bilgisi çerçevesine bir de klasör bilgisi ekleyelim
+        # İkinci satır - klasör bilgisi
         klasor_bilgi_frame = ttk.Frame(sayfa_frame)
-        klasor_bilgi_frame.pack(fill=tk.X, padx=5, pady=5)
+        klasor_bilgi_frame.pack(fill=tk.X, padx=2, pady=(0, 2))
         
-        ttk.Label(klasor_bilgi_frame, text="Kayıt Klasörü:", 
-                style='Info.TLabel').grid(row=0, column=0, padx=5, sticky="w")
+        ttk.Label(klasor_bilgi_frame, text="Klasör:", 
+                style='Info.TLabel', font=('Segoe UI', 8)).pack(side=tk.LEFT, padx=2)
         
         self.klasor_label = ttk.Label(klasor_bilgi_frame, text=self.kayit_klasoru, 
-                                   style='Info.TLabel')
-        self.klasor_label.grid(row=0, column=1, padx=5, sticky="w")
+                                   style='Info.TLabel', font=('Segoe UI', 8))
+        self.klasor_label.pack(side=tk.LEFT, padx=2)
         
-        # ======= ADIM 5: TARAMA KONTROL =======
-        kontrol_frame = ttk.LabelFrame(content_frame, text="🔷 5. Adım: Tarama Kontrol", padding="5")  # 10 yerine 5 padding
-        kontrol_frame.grid(row=4, column=0, sticky="ew", pady=3)  # 5 yerine 3 padding
+        # ======= TARAMA KONTROL =======
+        kontrol_frame = ttk.LabelFrame(content_frame, text="5. Tarama Kontrol", padding="2")
+        kontrol_frame.grid(row=4, column=0, sticky="ew", pady=2)
         
-        # Otomatik PDF seçeneği
-        otomatik_pdf_frame = ttk.Frame(kontrol_frame)
-        otomatik_pdf_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Checkbutton(otomatik_pdf_frame, text="Tarama bittiğinde otomatik PDF oluştur", 
-                      variable=self.otomatik_pdf, 
-                      command=self.ayarlari_kaydet).pack(pady=5)
-        
+        # Butonlar ve otomatik PDF seçeneği - tek satırda
         buton_frame = ttk.Frame(kontrol_frame)
-        buton_frame.pack(fill=tk.X, padx=5, pady=5)
+        buton_frame.pack(fill=tk.X, padx=2, pady=2)
         
-        # Başlat/Durdur butonlarını daha görünür yap
-        self.baslat_btn = ttk.Button(buton_frame, text="▶️ TARAMAYI BAŞLAT", 
-                                    command=self.taramayi_baslat, 
-                                    style='BigAction.TButton')
-        self.baslat_btn.grid(row=0, column=0, padx=10, pady=5, sticky="ew")
+        # Sol taraf - butonlar
+        baslat_frame = ttk.Frame(buton_frame)
+        baslat_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        self.durdur_btn = ttk.Button(buton_frame, text="⏹️ TARAMAYI DURDUR", 
+        self.baslat_btn = ttk.Button(baslat_frame, text="▶️ BAŞLAT", 
+                                    command=self.taramayi_baslat)
+        self.baslat_btn.pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+        
+        self.durdur_btn = ttk.Button(baslat_frame, text="⏹️ DURDUR", 
                                     command=self.taramayi_durdur, 
-                                    style='BigAction.TButton', state=tk.DISABLED)
-        self.durdur_btn.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
+                                    state=tk.DISABLED)
+        self.durdur_btn.pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
         
-        # Butonlara eşit genişlik ver
-        buton_frame.columnconfigure(0, weight=1)
-        buton_frame.columnconfigure(1, weight=1)
+        # Sağ taraf - PDF seçeneği
+        pdf_frame = ttk.Frame(buton_frame)
+        pdf_frame.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Kısayol bilgisi
-        ttk.Label(kontrol_frame, text="Klavye kısayolu: Taramayı durdurmak için ESC tuşuna basın", 
-                 style='Info.TLabel').pack(pady=5)
+        ttk.Checkbutton(pdf_frame, text="Tarama sonrası PDF oluştur", 
+                      variable=self.otomatik_pdf, 
+                      command=self.ayarlari_kaydet).pack(side=tk.RIGHT, padx=2)
+        
+        # Kısa bilgi
+        ttk.Label(kontrol_frame, text="ESC tuşu: Taramayı durdur", 
+                 style='Info.TLabel', font=('Segoe UI', 8)).pack(pady=(0, 2))
         
         # ======= İŞLEM GÜNLÜĞÜ =======
-        log_frame = ttk.LabelFrame(content_frame, text="İşlem Günlüğü", padding="3")  # 5 yerine 3 padding
-        log_frame.grid(row=5, column=0, sticky="nsew", pady=3)  # 5 yerine 3 padding
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
-        content_frame.rowconfigure(5, weight=1)  # Log alanının yüksekliğini de genişlemeye izin ver
+        log_frame = ttk.LabelFrame(content_frame, text="İşlem Günlüğü", padding="2")
+        log_frame.grid(row=5, column=0, sticky="nsew", pady=2)
+        content_frame.rowconfigure(5, weight=1)
         
         # Log metni - scrollbar eklenmiş
         log_container = ttk.Frame(log_frame)
-        log_container.grid(row=0, column=0, sticky="nsew")
-        log_container.columnconfigure(0, weight=1)
-        log_container.rowconfigure(0, weight=1)
+        log_container.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         
-        self.log_text = tk.Text(log_container, height=8, wrap=tk.WORD)
-        self.log_text.grid(row=0, column=0, sticky="nsew")
+        self.log_text = tk.Text(log_container, height=5, wrap=tk.WORD, font=('Segoe UI', 8))
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.log_text.config(state=tk.DISABLED)
         
         log_scrollbar = ttk.Scrollbar(log_container, orient="vertical", command=self.log_text.yview)
-        log_scrollbar.grid(row=0, column=1, sticky="ns")
+        log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.log_text.configure(yscrollcommand=log_scrollbar.set)
         
         # Klavye kısayolları
         self.root.bind("<Escape>", lambda e: self.taramayi_durdur())
-        
-        # Yardım etiketi
-        yardim_text = "Bu program, web sayfalarını otomatik olarak tarayıp PDF dosyasına dönüştürür.\n"
-        yardim_text += "Her adımı yukarıdan aşağıya sırayla takip edin."
-        
-        ttk.Label(content_frame, text=yardim_text, style='Info.TLabel', 
-                 wraplength=600, justify='center').grid(row=6, column=0, pady=5)
     
     def log_ekle(self, mesaj):
         try:
@@ -513,14 +484,14 @@ class EkranTarayici:
                 
                 self.tarama_alani = {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2}
                 
-                # Koordinat etiketini güncelle
+                # Koordinat etiketini güncelle - daha kompakt
                 self.koordinat_label.config(
-                    text=f"Sol Üst: ({x1}, {y1}) - Sağ Alt: ({x2}, {y2})"
+                    text=f"({x1},{y1})-({x2},{y2})"
                 )
                 
                 select_window.destroy()
                 self.root.deiconify()  # Ana pencereyi geri getir
-                self.log_ekle(f"Tarama alanı seçildi: ({x1}, {y1}) - ({x2}, {y2})")
+                self.log_ekle(f"Tarama alanı: ({x1},{y1})-({x2},{y2})")
                 
                 # Ayarları kaydet
                 self.ayarlari_kaydet()
@@ -538,7 +509,7 @@ class EkranTarayici:
             
         except Exception as e:
             self.root.deiconify()  # Hata durumunda ana pencereyi geri getir
-            self.log_ekle(f"Tarama alanı seçilirken hata oluştu: {e}")
+            self.log_ekle(f"Tarama alanı seçilirken hata: {e}")
     
     def tikla_nokta_sec(self):
         self.root.iconify()  # Pencereyi simge durumuna küçült
@@ -575,15 +546,15 @@ class EkranTarayici:
                 
                 self.tiklanacak_nokta = {'x': x, 'y': y}
                 
-                # Nokta koordinat etiketini güncelle
+                # Nokta koordinat etiketini güncelle - daha kompakt
                 self.nokta_label.config(
-                    text=f"Koordinat: ({x}, {y})"
+                    text=f"({x},{y})"
                 )
                 
                 time.sleep(0.5)  # Noktayı görmesi için bekle
                 select_window.destroy()
                 self.root.deiconify()  # Ana pencereyi geri getir
-                self.log_ekle(f"Tıklama noktası seçildi: ({x}, {y})")
+                self.log_ekle(f"Tıklama noktası: ({x},{y})")
                 
                 # Ayarları kaydet
                 self.ayarlari_kaydet()
@@ -599,7 +570,7 @@ class EkranTarayici:
             
         except Exception as e:
             self.root.deiconify()  # Hata durumunda ana pencereyi geri getir
-            self.log_ekle(f"Tıklama noktası seçilirken hata oluştu: {e}")
+            self.log_ekle(f"Tıklama noktası seçilirken hata: {e}")
     
     def ayarlari_guncelle(self):
         # Tarama alanı ve tıklama noktası görsel olarak seçildiği için
@@ -656,72 +627,42 @@ class EkranTarayici:
             
         # Yeni kontrol paneli oluştur
         self.kontrol_panel = tk.Toplevel(self.root)
-        self.kontrol_panel.title("Tarama Kontrol")
-        self.kontrol_panel.geometry("300x120")  # Biraz daha yüksek
+        self.kontrol_panel.title("")  # Başlık yok
+        self.kontrol_panel.geometry("50x120")  # Çok dar panel (50 piksel)
         self.kontrol_panel.resizable(False, False)
         self.kontrol_panel.attributes('-topmost', True)  # Her zaman üstte göster
         
         # Ekranın sağ üst köşesine konumlandır
         ekran_genislik = self.kontrol_panel.winfo_screenwidth()
         ekran_yukseklik = self.kontrol_panel.winfo_screenheight()
-        x = ekran_genislik - 310
+        x = ekran_genislik - 60
         y = 10
-        self.kontrol_panel.geometry(f"300x120+{x}+{y}")
+        self.kontrol_panel.geometry(f"50x120+{x}+{y}")
         
-        # Panel stilleri
-        panel_frame = ttk.Frame(self.kontrol_panel, padding="10")
+        # Panel stilleri - minimum padding
+        panel_frame = ttk.Frame(self.kontrol_panel, padding="2")
         panel_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Başlık - durum bilgisi ile
-        self.panel_baslik = ttk.Label(panel_frame, text="🔄 Tarama Devam Ediyor", 
-                                     font=('Segoe UI', 10, 'bold'))
-        self.panel_baslik.pack(pady=(0, 5))
+        # Sayfa numarası etiketi - yalnızca mevcut sayfa
+        self.panel_sayfa_label = ttk.Label(panel_frame, text=f"S:{self.sayfa_no}", 
+                                          font=('Segoe UI', 8))
+        self.panel_sayfa_label.pack(pady=(0, 1))
         
-        # Sayfa bilgisi
-        bilgi_frame = ttk.Frame(panel_frame)
-        bilgi_frame.pack(fill=tk.X, pady=3)
-        
-        # Sayfa bilgisi
-        ttk.Label(bilgi_frame, text="Sayfa:").grid(row=0, column=0, padx=3)
-        self.panel_sayfa_label = ttk.Label(bilgi_frame, text=str(self.sayfa_no), font=('Segoe UI', 9, 'bold'))
-        self.panel_sayfa_label.grid(row=0, column=1, padx=3)
-        
-        ttk.Label(bilgi_frame, text="/").grid(row=0, column=2)
-        
-        ttk.Label(bilgi_frame, text="Hedef:").grid(row=0, column=3, padx=3)
-        self.panel_hedef_label = ttk.Label(bilgi_frame, text=str(self.hedef_sayfa_sayisi), font=('Segoe UI', 9, 'bold'))
-        self.panel_hedef_label.grid(row=0, column=4, padx=3)
-        
-        # Kitap bilgisi
-        if self.aktif_kitap:
-            ttk.Label(bilgi_frame, text="Kitap:").grid(row=0, column=5, padx=3)
-            ttk.Label(bilgi_frame, text=self.aktif_kitap[:15] + "..." if len(self.aktif_kitap) > 15 else self.aktif_kitap,
-                    font=('Segoe UI', 9)).grid(row=0, column=6, padx=3)
-        
-        # Buton çerçevesi
-        buton_frame = ttk.Frame(panel_frame)
-        buton_frame.pack(fill=tk.X, pady=3)
-        
-        # Durdurma ve devam butonları
-        self.panel_duraklat_btn = ttk.Button(buton_frame, text="⏸️ DURAKLAT", 
+        # Butonları alt alta düzenle - çok dar
+        self.panel_duraklat_btn = ttk.Button(panel_frame, text="⏸️", 
                                           command=self.taramayi_duraklat, 
-                                          style='Accent.TButton')
-        self.panel_duraklat_btn.grid(row=0, column=0, padx=2, sticky="ew")
+                                          width=3)
+        self.panel_duraklat_btn.pack(pady=1)
         
-        self.panel_devam_btn = ttk.Button(buton_frame, text="▶️ DEVAM ET", 
+        self.panel_devam_btn = ttk.Button(panel_frame, text="▶️", 
                                        command=self.taramayi_devam_ettir, 
-                                       style='Accent.TButton', state=tk.DISABLED)
-        self.panel_devam_btn.grid(row=0, column=1, padx=2, sticky="ew")
+                                       width=3, state=tk.DISABLED)
+        self.panel_devam_btn.pack(pady=1)
         
-        # İptal butonu
-        self.panel_iptal_btn = ttk.Button(buton_frame, text="⏹️ İPTAL ET", 
+        self.panel_iptal_btn = ttk.Button(panel_frame, text="⏹️", 
                                        command=self.taramayi_durdur, 
-                                       style='Secondary.TButton')
-        self.panel_iptal_btn.grid(row=1, column=0, columnspan=2, pady=3, sticky="ew")
-        
-        # Butonlara eşit genişlik
-        buton_frame.columnconfigure(0, weight=1)
-        buton_frame.columnconfigure(1, weight=1)
+                                       width=3)
+        self.panel_iptal_btn.pack(pady=1)
         
         # Panel kapatıldığında taramayı durdur
         self.kontrol_panel.protocol("WM_DELETE_WINDOW", self.taramayi_durdur)
@@ -733,14 +674,15 @@ class EkranTarayici:
         """Taramayı duraklatır"""
         if not self.tarama_duraklatildi:
             self.tarama_duraklatildi = True
-            self.log_ekle("Tarama duraklatıldı. Devam etmek için 'DEVAM ET' butonuna tıklayın.")
+            self.log_ekle("Tarama duraklatıldı. Devam etmek için '▶️' butonuna tıklayın.")
             
             # Butonların durumlarını güncelle
             self.panel_duraklat_btn.config(state=tk.DISABLED)
             self.panel_devam_btn.config(state=tk.NORMAL)
             
-            # Başlığı güncelle
-            self.panel_baslik.config(text="⏸️ Tarama Duraklatıldı")
+            # Durum bilgisini güncelle
+            if hasattr(self, 'panel_sayfa_label') and self.panel_sayfa_label.winfo_exists():
+                self.panel_sayfa_label.config(text="⏸️ DURAKLATILDI")
     
     def taramayi_devam_ettir(self):
         """Taramayı kaldığı yerden devam ettirir"""
@@ -752,8 +694,12 @@ class EkranTarayici:
             self.panel_duraklat_btn.config(state=tk.NORMAL)
             self.panel_devam_btn.config(state=tk.DISABLED)
             
-            # Başlığı güncelle
-            self.panel_baslik.config(text="🔄 Tarama Devam Ediyor")
+            # Durum bilgisini güncelle
+            if hasattr(self, 'panel_sayfa_label') and self.panel_sayfa_label.winfo_exists():
+                self.panel_sayfa_label.config(text=f"S:{self.sayfa_no}")
+                
+            # Kontrol panelini güncelle
+            self.kontrol_paneli_guncelle()
     
     def tarama_islemi(self):
         # Taramadan önce pencereyi küçült
@@ -765,12 +711,22 @@ class EkranTarayici:
             self.sayfa_parcalari = []  # Önceki parçaları temizle
             gc.collect()  # Çöp toplayıcıyı çağır
             
+            # Klavye kısayolu - ESC tuşu ile tarama durdurma
+            keyboard.add_hotkey('esc', self.taramayi_durdur)
+            
             while self.devam_ediyor:
+                # ESC tuşuna basıldı mı kontrol et
+                if keyboard.is_pressed('esc'):
+                    self.log_ekle("ESC tuşuna basıldı. Tarama durduruluyor...")
+                    self.taramayi_durdur()
+                    break
+                    
                 # Periyodik ilerleme kaydetme
                 self.ilerleme_kaydet()
                 
-                # Kontrol panelini güncelle
-                self.root.after(0, self.kontrol_paneli_guncelle)
+                # Kontrol panelini güncelle - ana thread üzerinden çağır
+                if self.kontrol_panel and self.kontrol_panel.winfo_exists():
+                    self.root.after(0, self.kontrol_paneli_guncelle)
                 
                 # Duraklatıldıysa bekle
                 while self.tarama_duraklatildi and self.devam_ediyor:
@@ -799,6 +755,11 @@ class EkranTarayici:
                     
                     # Yeni sayfanın yüklenmesini bekle
                     self.log_ekle("Yeni sayfa yükleniyor...")
+                    
+                    # Tıklama sonrası kısa bekleme - sayfa geçişi için
+                    time.sleep(0.5)  # Tıklama sonrası kısa bekleme ekle
+                    
+                    # Sayfa yüklenme beklemesi
                     sayfa_yuklendi = self.sayfa_yuklenmesini_bekle(True)
                     
                     # Yeni sayfa başlangıç gecikmesi - Turcademy için daha uygun bekle
@@ -806,14 +767,19 @@ class EkranTarayici:
                         # Turcademy için optimize edilmiş bekleme süresi
                         time.sleep(self.sayfa_gecis_gecikmesi * self.turcademy_gecis_carpani)
                     else:
-                        # Nobel için normal bekleme süresi
+                        # Nobel için ek bekleme süresi 
                         time.sleep(self.sayfa_gecis_gecikmesi)
+                        
+                        # Nobel için sayfa içeriğinin tamamen görünür olması için biraz daha bekle
+                        time.sleep(1.0)  # Nobel modu için ekstra bekleme
                     
                     # Sayfa yüklenme bilgisi
                     if sayfa_yuklendi:
                         self.log_ekle("Yeni sayfa yüklendi.")
                     else:
                         self.log_ekle("Yeni sayfa yüklenme zaman aşımı. Devam ediliyor.")
+                        # Sayfanın yüklenmesi için ek bekleme
+                        time.sleep(1.0)
                         
                     # Bellek optimizasyonu
                     if self.sayfa_no % 10 == 0:  # Her 10 sayfada bir
@@ -943,6 +909,7 @@ class EkranTarayici:
             # Kontrol panelini kapat
             if self.kontrol_panel and self.kontrol_panel.winfo_exists():
                 self.kontrol_panel.destroy()
+                self.kontrol_panel = None  # Referansı temizle
             
             # Ana pencereyi göster
             self.root.deiconify()
@@ -951,6 +918,8 @@ class EkranTarayici:
             if self.otomatik_pdf.get() and self.pdf_butonunu_goster():
                 self.log_ekle("Otomatik PDF oluşturma başlatılıyor...")
                 self.root.after(1000, self.secili_klasordeki_goruntuleri_birlestir)
+        
+        return False  # Event handler'ın normal işleyişini devam ettir
 
     def secili_klasordeki_goruntuleri_birlestir(self):
         """Aktif kitap klasöründeki tüm görüntüleri birleştirerek PDF oluşturur"""
@@ -1004,7 +973,7 @@ class EkranTarayici:
                 # Klasördeki tüm PNG dosyalarını bul
                 goruntu_dosyalari = []
                 for dosya in os.listdir(kitap_klasoru):
-                    if dosya.lower().endswith(".png"):
+                    if dosya.lower().endswith(".png") and dosya.startswith("sayfa_"):
                         tam_yol = os.path.join(kitap_klasoru, dosya)
                         goruntu_dosyalari.append(tam_yol)
                 
@@ -1013,61 +982,104 @@ class EkranTarayici:
                     progress_window.destroy()
                     return
                 
-                # Dosyaları sayfa numarasına göre sırala
+                # ÖNEMLİ: Dosyaları sayfa numarasına göre doğru sırala
+                self.log_ekle(f"PDF oluşturma için görüntüler sıralanıyor (toplam {len(goruntu_dosyalari)} dosya)")
                 goruntu_dosyalari = self.goruntu_dosyalarini_sirala(goruntu_dosyalari)
                 
-                # PDF oluştur
-                pdf_writer = PdfWriter()
+                # Sıralanmış dosyaların sayfa numaralarını kontrol et ve göster
+                sayfa_numaralari = []
+                for dosya in goruntu_dosyalari[:20]:  # İlk 20 dosyayı göster
+                    dosya_adi = os.path.basename(dosya)
+                    sayfa_no_str = dosya_adi[len("sayfa_"):-len(".png")]
+                    try:
+                        sayfa_no = int(sayfa_no_str)
+                        sayfa_numaralari.append(sayfa_no)
+                    except ValueError:
+                        sayfa_numaralari.append("?")
+                
+                self.log_ekle(f"Sıralanmış sayfa numaraları (ilk 20): {sayfa_numaralari}")
                 
                 # İlerleme bilgisi için
                 toplam_dosya = len(goruntu_dosyalari)
                 
+                # PILLOW KULLANARAK DOĞRUDAN PDF OLUŞTUR
+                goruntu_listesi = []
+                
                 for i, dosya in enumerate(goruntu_dosyalari):
                     # İlerleme göstergesini güncelle
-                    ilerleme_yuzdesi = (i + 1) / toplam_dosya * 100
+                    ilerleme_yuzdesi = (i + 1) / toplam_dosya * 50  # İlk %50 yükleme için
                     self.root.after(0, lambda p=ilerleme_yuzdesi: progress_var.set(p))
-                    self.root.after(0, lambda d=os.path.basename(dosya), i=i+1, t=toplam_dosya: 
-                                 progress_label.config(text=f"İşleniyor: {i}/{t} - {d}"))
                     
-                    self.log_ekle(f"İşleniyor ({i+1}/{toplam_dosya}): {os.path.basename(dosya)}")
+                    # Dosya adını ve ilerlemeyi göster
+                    dosya_adi = os.path.basename(dosya)
+                    self.root.after(0, lambda d=dosya_adi, i=i+1, t=toplam_dosya: 
+                                 progress_label.config(text=f"Yükleniyor: {i}/{t} - {d}"))
                     
                     try:
-                        # Belleği optimize etmek için işlenen dosyayı hemen serbest bırak
-                        with Image.open(dosya) as img:
-                            # Görüntüyü PDF sayfasına dönüştür
-                            img_bytes = BytesIO()
-                            img.convert('RGB').save(img_bytes, format='PDF')
-                            img_bytes.seek(0)
-                            
-                            # PDF sayfasını ekle
-                            pdf = PdfReader(img_bytes)
-                            pdf_writer.add_page(pdf.pages[0])
+                        img = Image.open(dosya)
+                        goruntu_listesi.append(img.convert('RGB'))  # RGB formatına dönüştür
+                        self.log_ekle(f"Yükleniyor ({i+1}/{toplam_dosya}): {dosya_adi}")
                     except Exception as e:
-                        self.log_ekle(f"Dosya işlenirken hata: {os.path.basename(dosya)} - {e}")
+                        self.log_ekle(f"Dosya yüklenirken hata: {dosya_adi} - {e}")
                 
-                # PDF'i kaydet
-                with open(dosya_yolu, 'wb') as f:
-                    pdf_writer.write(f)
-                
-                self.log_ekle(f"{toplam_dosya} görüntü birleştirildi: {dosya_yolu}")
-                
-                # Tamamlama mesajı göster
-                self.root.after(0, lambda: messagebox.showinfo("Başarılı", f"PDF dosyası oluşturuldu: {dosya_yolu}"))
-                
-                # Kitap bilgilerini kaydet
-                kitap_bilgisi = {
-                    'kitap_adi': self.aktif_kitap,
-                    'sayfa_sayisi': toplam_dosya,
-                    'son_islem_tarihi': time.strftime("%Y-%m-%d %H:%M:%S"),
-                    'pdf_dosyasi': dosya_yolu
-                }
-                
-                self.kitap_bilgisi_kaydet(kitap_klasoru, kitap_bilgisi)
+                # Görüntü boyutlarını kontrol et
+                if goruntu_listesi:
+                    self.log_ekle(f"İlk görüntü boyutu: {goruntu_listesi[0].width}x{goruntu_listesi[0].height}")
+                    
+                    # İlk görüntüyü ayır
+                    ilk_goruntu = goruntu_listesi[0]
+                    diger_goruntuler = goruntu_listesi[1:] if len(goruntu_listesi) > 1 else []
+                    
+                    # Doğrudan save ile PDF oluştur
+                    self.log_ekle("PDF oluşturuluyor...")
+                    self.root.after(0, lambda: progress_label.config(text="PDF oluşturuluyor... Lütfen bekleyin..."))
+                    self.root.after(0, lambda: progress_var.set(75))  # %75 ilerleme
+                    
+                    ilk_goruntu.save(
+                        dosya_yolu, 
+                        save_all=True, 
+                        append_images=diger_goruntuler,
+                        resolution=100.0,
+                        format="PDF"
+                    )
+                    
+                    # PDF oluşturma tamamlandı
+                    self.log_ekle(f"{toplam_dosya} görüntü PDF'e dönüştürüldü: {dosya_yolu}")
+                    self.root.after(0, lambda: progress_var.set(100))
+                    
+                    # Tamamlama mesajı göster
+                    self.root.after(0, lambda: messagebox.showinfo("Başarılı", 
+                        f"PDF dosyası oluşturuldu: {dosya_yolu}\n{toplam_dosya} sayfa işlendi."))
+                    
+                    # Kitap bilgilerini kaydet
+                    kitap_bilgisi = {
+                        'kitap_adi': self.aktif_kitap,
+                        'sayfa_sayisi': toplam_dosya,
+                        'son_islem_tarihi': time.strftime("%Y-%m-%d %H:%M:%S"),
+                        'pdf_dosyasi': dosya_yolu
+                    }
+                    
+                    self.kitap_bilgisi_kaydet(kitap_klasoru, kitap_bilgisi)
+                else:
+                    self.log_ekle("Yüklenecek görüntü bulunamadı!")
+                    self.root.after(0, lambda: messagebox.showinfo("Bilgi", "Hiçbir görüntü yüklenemedi."))
                 
             except Exception as e:
                 self.log_ekle(f"PDF oluşturulurken hata: {e}")
                 self.root.after(0, lambda: messagebox.showerror("Hata", f"PDF oluşturulurken hata: {e}"))
             finally:
+                # Belleği temizle
+                try:
+                    if 'goruntu_listesi' in locals():
+                        del goruntu_listesi
+                    if 'ilk_goruntu' in locals():
+                        del ilk_goruntu
+                    if 'diger_goruntuler' in locals():
+                        del diger_goruntuler
+                    gc.collect()
+                except:
+                    pass
+                
                 self.root.after(0, progress_window.destroy)
         
         # PDF oluştur iş parçacığını başlat
@@ -1228,12 +1240,13 @@ class EkranTarayici:
         # PDF oluşturma butonunu göster veya gizle
         self.pdf_butonunu_goster()
         
-        # İlerlemeyi yükle
+        # Mevcut sayfa durumunu tespit et ve ilerlemeyi yükle
+        self.mevcut_sayfa_durumunu_tespit_et()
         self.ilerleme_yukle()
         
         self.log_ekle(f"Aktif kitap: {secilen}")
         
-        # Sayfa bilgisini güncelle (eksik kısım eklendi)
+        # Sayfa bilgisini güncelle
         self.sayfa_bilgisi_guncelle()
     
     def pdf_butonunu_goster(self):
@@ -1249,49 +1262,84 @@ class EkranTarayici:
                         break
             
             # PNG dosyası varsa butonu göster, yoksa gizle
-            if png_var:
-                self.pdf_button.grid()
-            else:
-                self.pdf_button.grid_remove()
+            if png_var and not self.pdf_button_visible:
+                self.pdf_button.pack(side=tk.LEFT, padx=1)
+                self.pdf_button_visible = True
+            elif not png_var and self.pdf_button_visible:
+                self.pdf_button.pack_forget()
+                self.pdf_button_visible = False
                 
             return png_var
         except Exception as e:
             self.log_ekle(f"PDF butonu kontrolünde hata: {e}")
-            self.pdf_button.grid_remove()
+            if self.pdf_button_visible:
+                self.pdf_button.pack_forget()
+                self.pdf_button_visible = False
             return False
     
     def goruntu_dosyalarini_sirala(self, dosya_listesi):
         """Görüntü dosyalarını sayfa numarasına göre sıralar"""
-        def sayfa_numarasi_getir(dosya_yolu):
-            try:
-                # sayfa_XX.png veya benzeri formatta dosya adından sayfa numarasını çıkar
-                dosya_adi = os.path.basename(dosya_yolu)
+        try:
+            self.log_ekle("Görüntü dosyaları sıralanıyor...")
+            
+            # Dosya yollarını ve sayfa numaralarını içeren liste oluştur
+            dosya_bilgileri = []
+            
+            for dosya_yolu in dosya_listesi:
+                try:
+                    # Dosya adını al
+                    dosya_adi = os.path.basename(dosya_yolu)
+                    
+                    # Sadece geçerli sayfa dosyalarını işle
+                    if not dosya_adi.startswith("sayfa_") or not dosya_adi.endswith(".png"):
+                        continue
+                    
+                    # Sayfa numarasını çıkar
+                    sayfa_no_str = dosya_adi[len("sayfa_"):-len(".png")]
+                    
+                    try:
+                        # Sayfa numarasını tamsayıya dönüştür (sayısal sıralama için)
+                        sayfa_no = int(sayfa_no_str)
+                        
+                        # Bilgiyi ekle
+                        dosya_bilgileri.append({
+                            "dosya_yolu": dosya_yolu,
+                            "sayfa_no": sayfa_no,
+                            "dosya_adi": dosya_adi
+                        })
+                    except ValueError:
+                        # Sayfa numarası alınamadıysa, en sona koy
+                        self.log_ekle(f"Uyarı: Sayfa numarası çözümlenemedi: {dosya_adi}")
+                        dosya_bilgileri.append({
+                            "dosya_yolu": dosya_yolu,
+                            "sayfa_no": float('inf'),  # Sonsuz değerle sona koy
+                            "dosya_adi": dosya_adi
+                        })
+                except Exception as e:
+                    self.log_ekle(f"Dosya işlenirken hata: {e}")
+                    continue
+            
+            # Sayfa numarasına göre (sayısal olarak) sırala
+            dosya_bilgileri.sort(key=lambda x: x["sayfa_no"])
+            
+            # Sıralama sonrası bilgileri göster
+            self.log_ekle(f"Toplam {len(dosya_bilgileri)} dosya sıralandı.")
+            
+            if len(dosya_bilgileri) > 0:
+                ilk_10_dosya = [f"{bilgi['dosya_adi']}({bilgi['sayfa_no']})" for bilgi in dosya_bilgileri[:10]]
+                self.log_ekle(f"İlk 10 dosya: {', '.join(ilk_10_dosya)}")
                 
-                # sayfa_X.png, sayfa-X.png, sayfaX.png gibi çeşitli formatları destekle
-                for ayirici in ['_', '-', ' ']:
-                    parcalar = dosya_adi.split(ayirici)
-                    if len(parcalar) >= 2:
-                        try:
-                            # Son parçadan .png'yi çıkar ve sayıya dönüştür
-                            numara_kismi = parcalar[1].split('.')[0]
-                            return int(numara_kismi)
-                        except:
-                            pass
-                
-                # Başka bir yöntem dene, dosya adındaki tüm sayıları çıkar
-                import re
-                sayilar = re.findall(r'\d+', dosya_adi)
-                if sayilar:
-                    return int(sayilar[0])
-                
-                # Hiçbir yöntem işe yaramazsa, dosya adını döndür (alfabetik sıralama için)
-                return dosya_adi
-            except:
-                # Hata durumunda dosya adını döndür
-                return os.path.basename(dosya_yolu)
+                if len(dosya_bilgileri) > 20:
+                    son_10_dosya = [f"{bilgi['dosya_adi']}({bilgi['sayfa_no']})" for bilgi in dosya_bilgileri[-10:]]
+                    self.log_ekle(f"Son 10 dosya: {', '.join(son_10_dosya)}")
+            
+            # Sadece dosya yollarını döndür
+            return [bilgi["dosya_yolu"] for bilgi in dosya_bilgileri]
         
-        # Dosyaları sayfa numarasına göre sırala
-        return sorted(dosya_listesi, key=sayfa_numarasi_getir)
+        except Exception as e:
+            self.log_ekle(f"Dosyalar sıralanırken hata: {e}")
+            # Hata durumunda orijinal listeyi döndür
+            return dosya_listesi
     
     def kitap_klasoru_olustur(self, kitap_adi):
         """Kitap için klasör oluşturur"""
@@ -1395,8 +1443,34 @@ class EkranTarayici:
             return None
     
     def sayfa_bilgisi_guncelle(self):
+        """Sayfa bilgisi etiketlerini ve ilerleme bilgisini günceller"""
         self.sayfa_label.config(text=str(self.sayfa_no))
         self.toplam_sayfa_label.config(text=str(self.toplam_sayfa))
+        
+        # Klasördeki gerçek dosya sayısını kontrol et ve güncelle
+        try:
+            if os.path.exists(self.kayit_klasoru):
+                klasor_sayfa_sayisi = 0
+                for dosya in os.listdir(self.kayit_klasoru):
+                    if dosya.startswith("sayfa_") and dosya.endswith(".png"):
+                        klasor_sayfa_sayisi += 1
+                
+                # Kullanıcıya bilgi ver
+                bilgi_metni = f"S:{self.sayfa_no}/{self.toplam_sayfa} (K:{klasor_sayfa_sayisi}/H:{self.hedef_sayfa_sayisi})"
+                self.log_ekle(bilgi_metni)
+                
+                # Tarama esnasında kontrol paneli varsa orada da göster
+                if self.kontrol_panel and self.kontrol_panel.winfo_exists():
+                    for child in self.kontrol_panel.winfo_children():
+                        if isinstance(child, ttk.Frame):
+                            for label in child.winfo_children():
+                                if isinstance(label, ttk.Label):
+                                    label.config(text=bilgi_metni)
+                                    break
+                            break
+        except Exception as e:
+            # Hata durumunda normal sayfa bilgisini göster
+            pass
     
     def goruntu_benzerlik_yuzde(self, goruntu1, goruntu2):
         """İki görüntü arasındaki benzerlik yüzdesini hesaplar (0-100)"""
@@ -1544,10 +1618,16 @@ class EkranTarayici:
                 self.sayfa_no = yeni_sayfa
                 self.sayfa_bilgisi_guncelle()
                 self.log_ekle(f"Başlangıç sayfa numarası {yeni_sayfa} olarak ayarlandı.")
+                
+                # Girişi tekrar readonly yap
+                self.baslangic_sayfa_entry.config(state='readonly')
             else:
                 messagebox.showwarning("Uyarı", "Sayfa numarası 1 veya daha büyük olmalıdır.")
         except ValueError:
             messagebox.showwarning("Uyarı", "Geçerli bir sayfa numarası girin.")
+        
+        # Her durumda readonly yap
+        self.baslangic_sayfa_entry.config(state='readonly')
 
     def bilgi_kontrolu(self):
         """Ayarlara göre bilgi mesajının gösterilip gösterilmeyeceğini kontrol eder"""
@@ -1649,6 +1729,38 @@ class EkranTarayici:
                 messagebox.showwarning("Uyarı", "Hedef sayfa sayısı 1 veya daha büyük olmalıdır.")
         except ValueError:
             messagebox.showwarning("Uyarı", "Geçerli bir sayfa sayısı girin.")
+
+    def kontrol_paneli_guncelle(self):
+        """Kontrol panelindeki sayfa ve durum bilgilerini günceller"""
+        try:
+            if self.kontrol_panel and self.kontrol_panel.winfo_exists():
+                # Klasördeki sayfa sayısını hesapla
+                klasor_sayfa_sayisi = 0
+                if os.path.exists(self.kayit_klasoru):
+                    for dosya in os.listdir(self.kayit_klasoru):
+                        if dosya.startswith("sayfa_") and dosya.endswith(".png"):
+                            klasor_sayfa_sayisi += 1
+                
+                # Kısa bilgi metni oluştur
+                bilgi_metni = f"S:{self.sayfa_no}/{self.toplam_sayfa}"
+                
+                # Panel etiketini güncelle
+                if hasattr(self, 'panel_sayfa_label') and self.panel_sayfa_label.winfo_exists():
+                    self.panel_sayfa_label.config(text=bilgi_metni)
+        except Exception as e:
+            # Hata durumunda sessizce devam et
+            pass
+
+    def sayfa_numarasi_duzenle(self):
+        """Sayfa numarasını manuel olarak düzenlemeye izin verir"""
+        # Readonly durumunu kaldır
+        self.baslangic_sayfa_entry.config(state='normal')
+        
+        # Kullanıcıya uyarı ver
+        self.log_ekle("Sayfa numarasını manuel olarak düzenleyebilirsiniz. Değiştirdikten sonra Enter tuşuna basın.")
+        
+        # Enter tuşuna basıldığında çağrılacak handler
+        self.baslangic_sayfa_entry.bind("<Return>", lambda e: self.baslangic_sayfasini_guncelle())
 
 if __name__ == "__main__":
     root = tk.Tk()
