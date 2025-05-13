@@ -17,11 +17,14 @@ Web sayfalarında bulunan pdfleri tarayıp PDF dosyasına dönüştüren kullan�
 - Kitapları yönetme (ekleme, silme)
 - İlerleme otomatik kaydedilir, daha sonra kaldığınız yerden devam edebilirsiniz
 
+![Açıklama](screenshots/acıklama.png)
+
+
 ## Kurulum
 
 ### Hazır Derlenmiş Sürüm
 
-1. [Releases](https://github.com/KULLANICI_ADINIZ/ekran-tarayici/releases) sayfasından son sürümü indirin
+1. [Releases](https://github.com/Nadirmermer/web-pdf-scanner/releases/tag/v0.1.0) sayfasından son sürümü indirin
 2. İndirilen ZIP dosyasını çıkarın ve `Ekran_Tarayici.exe` dosyasını çalıştırın
 
 ### Kaynak Koddan Çalıştırma
@@ -44,6 +47,10 @@ python ekran_tarayici.py
 3. **Tarama Ayarları**: Tarama alanını ve sayfa geçiş noktasını belirleyin
 4. **Sayfa Bilgisi**: Başlangıç ve hedef sayfa sayısını ayarlayın
 5. **Tarama Kontrol**: Taramayı başlatın ve kontrol paneli ile yönetin
+
+
+![modlar](screenshots/modlar.png)
+
 
 ### Kısayollar
 
