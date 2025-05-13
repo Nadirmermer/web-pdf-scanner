@@ -10,6 +10,9 @@ Web sayfalarında bulunan pdfleri tarayıp PDF dosyasına dönüştüren kullan�
 
 - **Nobel Modu**: Uzun sayfaları kaydırarak tarar ve birleştirir
 - **Turcademy Modu**: Her sayfayı tek görüntü olarak alır
+
+![modlar](screenshots/modlar.png)
+
 - Tarama alanını ve sayfa geçiş noktasını görsel olarak seçme
 - İşlem sırasında taramayı duraklatma/devam ettirme
 - Hedef sayfa sayısı belirleme ve otomatik durdurma
@@ -49,19 +52,13 @@ python ekran_tarayici.py
 5. **Tarama Kontrol**: Taramayı başlatın ve kontrol paneli ile yönetin
 
 
-![modlar](screenshots/modlar.png)
+
 
 
 ### Kısayollar
 
 - **ESC**: Taramayı durdur (şüpheli siz yine de paneli kullanın)
 
-## Ekran Görüntüleri
-
-Uygulama ekran görüntüsünü görmek için:
-
-1. Uygulamayı çalıştırın ve ekran görüntüsü alın
-2. Görüntüyü `screenshots` klasörüne `ekran_tarayici.png` adıyla kaydedin
 
 ## Lisans
 
