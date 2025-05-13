@@ -28,9 +28,9 @@ Web sayfalarında bulunan pdfleri tarayıp PDF dosyasına dönüştüren kullan�
 ### Hazır Derlenmiş Sürüm
 
 1. [Releases](https://github.com/Nadirmermer/web-pdf-scanner/releases/tag/v0.1.0) sayfasından son sürümü indirin
-2. İndirilen ZIP dosyasını çıkarın ve `Ekran_Tarayici.exe` dosyasını çalıştırın
+2.  `Ekran_Tarayici.exe` dosyasını çalıştırın ve keyfinize bakın
 
-### Kaynak Koddan Çalıştırma
+### Kaynak Koddan Çalıştırma (GELİŞTİRİCİLER İÇİN)
 
 Gereksinimler:
 - Python 3.7 veya üzeri
