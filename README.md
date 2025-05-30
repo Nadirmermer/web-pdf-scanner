@@ -124,6 +124,13 @@ python ekran_tarayici.py
 
 - **ESC**: Taramayı durdur
 
+## Teknik İyileştirmeler ve Kod Kalitesi
+
+- **Kod Yeniden Düzenleme (Refactoring):** Kod tabanı okunabilirlik ve bakım kolaylığı için önemli ölçüde yeniden düzenlendi. Büyük fonksiyonlar daha küçük modüllere ayrıldı, sabitler tanımlandı ve kapsamlı tür ipuçları (type hinting) eklendi.
+- **Bağımlılık Temizliği:** Kullanılmayan `PyPDF2` bağımlılığı kaldırıldı.
+- **Gelişmiş Hata Yönetimi:** Hata yönetimi daha spesifik hale getirildi ve hatalar için kullanıcı geri bildirimi iyileştirildi.
+- **Yapılandırma Esnekliği:** Temel operasyonel parametreler (bekleme süreleri, gecikmeler, benzerlik eşikleri vb.) artık `ayarlar.json` dosyası üzerinden yapılandırılabilir. Bu, kullanıcıların kaynak kodunu değiştirmeden uygulamanın davranışını ince ayar yapmasına olanak tanır.
+- **Küçük Arayüz İyileştirmeleri:** Arayüzde tutarlı dolgu (padding) kullanımı ve kontrol panelindeki bilgi sunumunda iyileştirmeler yapıldı.
 
 ## Lisans
 
